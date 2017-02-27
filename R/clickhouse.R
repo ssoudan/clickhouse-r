@@ -18,6 +18,22 @@ setClass("clickhouse_result",
   )
 )
 
+setMethod("dbGetInfo", "clickhouse_connection", def=function(dbObj, ...) {
+  envdata <- dbGetQuery(dbObj, "SELECT version() as version, uptime() as uptime, 
+                        currentDatabase() as database")
+  
+  ll$name <- "clickhouse_connection"
+  ll$db.version <- envdata$version
+  ll$uptime <- envdata$uptime
+  ll$url <- dbObj@url
+  ll$dbname <- envdata$database
+  ll$username <- NA
+  ll$host <- NA
+  ll$port <- NA
+  
+  ll
+})
+
 setMethod("dbIsValid", "clickhouse_driver", function(dbObj, ...) {
   TRUE
 })
