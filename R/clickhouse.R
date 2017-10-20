@@ -5,7 +5,10 @@ setClass("clickhouse_driver",
 setClass("clickhouse_connection",
   contains = "DBIConnection",
   slots = list(
-  	url = "character"
+  	url = "character",
+	user = "character",
+	password = "character",
+	database = "character"
   )
 )
 
@@ -57,9 +60,18 @@ clickhouse <- function() {
 }
 
 setMethod("dbConnect", "clickhouse_driver",
-  function(drv, host="localhost", port=8123L, user="default", password="", ...) {
+  function(drv, host="localhost", port=8123L, user="default", password="", ssl = FALSE, database = "default", ...) {
+    schema <- if (ssl) {
+        "https"
+    } else {
+        "http"
+    }
+
     con <- new("clickhouse_connection",
-      url = paste0("http://", user, ":", password, "@", host, ":", port, "/")
+      url = paste0(schema, "://", host, ":", port, "/"),
+      user = user,
+      password = password,
+      database = database
     )
     stopifnot(dbIsValid(con))
     con
@@ -99,13 +111,16 @@ setMethod("dbSendQuery", "clickhouse_connection", function(conn, statement, use 
 	}
 
 	h <- curl::new_handle()
-	curl::handle_setopt(h, copypostfields = q)
+
+        #let's ignore peer verification for now
+	curl::handle_setopt(h, copypostfields = q, userpwd = paste0(conn@user, ":", conn@password), httpauth = 1L, ssl_verifypeer = FALSE)
+	url <- paste0(conn@url, "?database=", URLencode(conn@database))
 
 	if (use == "memory") {
-	  req <- curl::curl_fetch_memory(conn@url, handle = h)
+	  req <- curl::curl_fetch_memory(url, handle = h)
 	} else {
 	  tmp <- tempfile()
-	  req <- curl::curl_fetch_disk(conn@url, tmp, handle = h)
+	  req <- curl::curl_fetch_disk(url, tmp, handle = h)
 	}
 
 	if (req$status_code != 200) {
@@ -189,8 +204,8 @@ setMethod("dbWriteTable", signature(conn = "clickhouse_connection", name = "char
     value_str2 <- paste0(get("value_str"), collapse="\n")
 
 	h <- curl::new_handle()
-	curl::handle_setopt(h, copypostfields = value_str2)
-	req <- curl::curl_fetch_memory(paste0(conn@url, "?query=",URLencode(paste0("INSERT INTO ", qname, " FORMAT TabSeparated"))), handle = h)
+	curl::handle_setopt(h, copypostfields = value_str2, userpwd = paste0(conn@user, ":", conn@password), httpauth = 1L, ssl_verifypeer = FALSE)
+	req <- curl::curl_fetch_memory(paste0(conn@url, "?database=", URLencode(conn@database), "&query=", URLencode(paste0("INSERT INTO ", qname, " FORMAT TabSeparated"))), handle = h)
 	if (req$status_code != 200) {
 		stop("Error writing data to table ", rawToChar(req$content))
 	}
